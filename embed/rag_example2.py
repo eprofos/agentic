@@ -16,6 +16,7 @@ import argparse
 import re
 from typing import List, Dict, Any
 from pathlib import Path
+import os.path
 
 from loguru import logger
 from dotenv import load_dotenv
@@ -115,7 +116,8 @@ class RAGSystem:
         self.llm = ChatOpenAI(
             model=self.llm_model,
             api_key=openrouter_api_key,
-            base_url=openrouter_api_base
+            base_url=openrouter_api_base,
+            temperature=0
         )
         
         # Définir le template de prompt pour l'extraction des mots-clés
@@ -144,11 +146,14 @@ Extract 3-5 most relevant keywords or phrases for search (in English):
         self.prompt_template = PromptTemplate(
             input_variables=["context", "question"],
             template="""
-You are an AI assistant who answers questions using only the information provided in the context below.
-If you don't know the answer or if the information is not present in the context, don't make up an answer.
+You are an AI assistant who provides extremely detailed answers using the information provided in the context below.
+The context includes both relevant chunks and the full content of files containing those chunks.
+Focus exclusively on the question asked and utilize all relevant information from the context to deliver the most comprehensive response possible with maximum specificity and depth.
 
-If you don't find the exact answer but identify relevant keywords or concepts that could help refine the search,
-clearly indicate them at the end of your answer in a section "KEYWORDS_FOR_NEW_SEARCH: [list of keywords]".
+Provide thorough explanations, include all pertinent details, and ensure your answer is as complete as possible.
+
+If you don't know the answer or if the information is not present in the context, don't make up an answer.
+Instead, clearly indicate them at the end of your answer in a section "KEYWORDS_FOR_NEW_SEARCH: [list of keywords]".
 
 If you have found a satisfactory answer, don't include this keywords section.
 
@@ -261,6 +266,30 @@ Answer:
             
             return chunks
     
+    def read_full_file_content(self, file_path: str) -> str:
+        """
+        Lit le contenu complet d'un fichier à partir de son chemin.
+        
+        Args:
+            file_path: Chemin du fichier à lire
+            
+        Returns:
+            str: Contenu complet du fichier
+        """
+        try:
+            # Si le chemin est relatif, on considère qu'il est relatif au répertoire 'libs'
+            if not os.path.isabs(file_path):
+                base_path = Path(__file__).parent.parent / 'libs'
+                full_path = base_path / file_path
+            else:
+                full_path = Path(file_path)
+            
+            logger.info(f"Lecture du fichier complet: {full_path}")
+            return full_path.read_text(encoding='utf-8')
+        except Exception as e:
+            logger.error(f"Erreur lors de la lecture du fichier {file_path}: {e}")
+            return f"Erreur lors de la lecture du fichier: {e}"
+    
     def format_context(self, chunks: List[Dict[str, Any]]) -> str:
         """
         Formate les chunks en un contexte pour le LLM.
@@ -273,8 +302,23 @@ Answer:
         """
         context_parts = []
         
+        # Garder une trace des fichiers déjà inclus pour éviter les doublons
+        included_files = set()
+        
         for i, chunk in enumerate(chunks):
-            context_parts.append(f"[Document {i+1}: {chunk['file_path']}]\n{chunk['chunk_text']}")
+            file_path = chunk['file_path']
+            
+            # Ajouter d'abord le chunk pertinent
+            context_parts.append(f"[Extrait {i+1} du document: {file_path}]\n{chunk['chunk_text']}")
+            
+            # Si le fichier complet n'a pas encore été inclus, l'ajouter
+            if file_path not in included_files:
+                try:
+                    full_content = self.read_full_file_content(file_path)
+                    context_parts.append(f"\n[Contenu complet du fichier: {file_path}]\n{full_content}")
+                    included_files.add(file_path)
+                except Exception as e:
+                    logger.error(f"Erreur lors de la lecture du fichier complet {file_path}: {e}")
         
         return "\n\n".join(context_parts)
     
