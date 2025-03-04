@@ -438,11 +438,13 @@ Answer:
 def main():
     """Main function."""
     parser = argparse.ArgumentParser(description="RAG system for answering questions based on indexed documents.")
+    parser.add_argument("question", type=str, nargs="?", help="Question to answer (if not provided, interactive mode will be used)")
     parser.add_argument("--embedding-model", type=str, default="nomic-embed-text", help="Name of the embedding model")
     parser.add_argument("--llm-model", type=str, help="Name of the language model (if not specified, uses OPENROUTER_MODEL)")
     parser.add_argument("--top-k", type=int, default=10, help="Number of documents to retrieve")
     parser.add_argument("--max-iterations", type=int, default=3, help="Maximum number of search iterations")
     parser.add_argument("--verbose", action="store_true", help="Show process details")
+    parser.add_argument("--interactive", action="store_true", help="Run in interactive mode")
     args = parser.parse_args()
     
     # Create RAG system
@@ -456,28 +458,36 @@ def main():
     print(f"Embedding model: {args.embedding_model}")
     print(f"Language model: {args.llm_model}")
     print(f"Number of documents to retrieve: {args.top_k}")
-    print(f"Maximum number of iterations: {args.max_iterations}")
-    print("\nType 'exit' to quit.")
-    
-    # Interactive loop
-    while True:
-        print("\n")
-        question = input("Question: ")
-        
-        if question.lower() in ["exit", "quit", "q"]:
-            break
-        
-        if not question.strip():
-            continue
-        
+    print(f"Maximum number of iterations: {args.max_iterations}")    
+
+    # Check if we should run in interactive mode or process a single question
+    if args.interactive or (args.question is None):
+        print("\nRunning in interactive mode. Type 'exit' to quit.")
+        # Interactive loop
+        while True:
+            print("\n")
+            question = input("Question: ")
+            
+            if question.lower() in ["exit", "quit", "q"]:
+                break
+            
+            if not question.strip():
+                continue
+            
+            try:
+                answer = rag_system.answer_question(question, verbose=args.verbose, max_iterations=args.max_iterations)
+                print("\nAnswer:")
+                print(answer)
+            except Exception as e:
+                logger.error(f"Error generating answer: {e}")
+                print(f"\nError: {e}")
+    else:
+        # Process the question provided as command line argument
         try:
-            answer = rag_system.answer_question(question, verbose=args.verbose, max_iterations=args.max_iterations)
-            print("\nAnswer:")
+            answer = rag_system.answer_question(args.question, verbose=args.verbose, max_iterations=args.max_iterations)
             print(answer)
         except Exception as e:
             logger.error(f"Error generating answer: {e}")
-            print(f"\nError: {e}")
-
-
+            print(f"Error: {e}")
 if __name__ == "__main__":
     main()
