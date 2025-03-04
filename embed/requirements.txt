@@ -1,6 +1,7 @@
 psycopg2-binary
 python-dotenv
 langchain-ollama
+langchain-community
 sqlalchemy
 pgvector
 tqdm

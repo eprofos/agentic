@@ -59,7 +59,7 @@ class RAGSystem:
     def __init__(
         self,
         embedding_model: str = "nomic-embed-text",
-        llm_model: str = "llama3",
+        llm_model: str = "llama3.2:1b",
         top_k: int = 5
     ):
         """
@@ -245,7 +245,7 @@ def main():
     """Fonction principale."""
     parser = argparse.ArgumentParser(description="Système RAG pour répondre à des questions basées sur les documents indexés.")
     parser.add_argument("--embedding-model", type=str, default="nomic-embed-text", help="Nom du modèle d'embedding")
-    parser.add_argument("--llm-model", type=str, default="llama3", help="Nom du modèle de langage")
+    parser.add_argument("--llm-model", type=str, default="llama3.2:1b", help="Nom du modèle de langage")
     parser.add_argument("--top-k", type=int, default=5, help="Nombre de documents à récupérer")
     parser.add_argument("--verbose", action="store_true", help="Afficher les détails du processus")
     args = parser.parse_args()
