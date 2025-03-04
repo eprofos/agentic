@@ -19,6 +19,7 @@ from pathlib import Path
 from loguru import logger
 from dotenv import load_dotenv
 import sqlalchemy as sa
+from sqlalchemy import cast
 from sqlalchemy.orm import sessionmaker
 from pgvector.sqlalchemy import Vector
 from langchain_ollama import OllamaEmbeddings
@@ -158,13 +159,13 @@ Réponse:"""
                     e.chunk_text,
                     e.document_id,
                     d.file_path,
-                    1 - (e.embedding <=> :query_embedding) AS similarity
+                    1 - (e.embedding <=> cast(:query_embedding AS vector)) AS similarity
                 FROM 
                     embeddings e
                 JOIN 
                     documents d ON e.document_id = d.id
                 ORDER BY 
-                    e.embedding <=> :query_embedding
+                    e.embedding <=> cast(:query_embedding AS vector)
                 LIMIT :top_k
             """)
             
@@ -234,7 +235,8 @@ Réponse:"""
         context = self.format_context(chunks)
         
         # Générer la réponse
-        response = self.chain.run(context=context, question=question)
+        result = self.chain.invoke({"context": context, "question": question})
+        response = result.get("text", "")  # Extraire la réponse du résultat
         
         logger.info(f"Réponse générée avec {len(chunks)} chunks pertinents")
         
