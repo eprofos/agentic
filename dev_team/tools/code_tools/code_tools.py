@@ -413,6 +413,144 @@ def generate_code_skeleton(
     logger.warning(f"Unsupported language or type: {language}, {type}")
     return f"// TODO: Generate {type} skeleton for {name} in {language}"
 
+def append_to_file(file_path: str, content: Union[str, bytes], binary: bool = False) -> bool:
+    """
+    Append content to a file.
+    
+    Args:
+        file_path: Path to the file
+        content: Content to append (string or bytes)
+        binary: Whether to append in binary mode
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    logger.info(f"Appending content to file: {file_path}")
+    
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+        
+        # Open file in appropriate mode
+        mode = 'ab' if binary else 'a'
+        with open(file_path, mode) as f:
+            if isinstance(content, str) and binary:
+                content = content.encode()
+            elif isinstance(content, bytes) and not binary:
+                content = content.decode()
+            f.write(content)
+        
+        logger.info("Successfully appended content to file")
+        return True
+    except Exception as e:
+        logger.error(f"Error appending to file: {e}")
+        return False
+
+def display_directory_structure(
+    path: str,
+    max_depth: Optional[int] = None,
+    exclude_patterns: Optional[List[str]] = None,
+    sort_by: str = "name"
+) -> str:
+    """
+    Display directory structure in a tree-like format.
+    
+    Args:
+        path: Root directory path
+        max_depth: Maximum depth to traverse (None for unlimited)
+        exclude_patterns: List of glob patterns to exclude
+        sort_by: Sort method ('name', 'size', 'modified')
+        
+    Returns:
+        str: Formatted directory structure
+    """
+    logger.info(f"Displaying directory structure for: {path}")
+    
+    if not os.path.exists(path):
+        logger.error(f"Path does not exist: {path}")
+        return ""
+    
+    exclude_patterns = exclude_patterns or []
+    result = []
+    
+    def should_exclude(item_path: str) -> bool:
+        from fnmatch import fnmatch
+        return any(fnmatch(item_path, pattern) for pattern in exclude_patterns)
+    
+    def get_sort_key(item_path: str) -> Any:
+        if sort_by == "size":
+            return os.path.getsize(item_path) if os.path.isfile(item_path) else 0
+        elif sort_by == "modified":
+            return os.path.getmtime(item_path)
+        return item_path.lower()
+    
+    def format_size(size: int) -> str:
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024:
+                return f"{size:.1f}{unit}"
+            size /= 1024
+        return f"{size:.1f}TB"
+    
+    def walk_directory(current_path: str, prefix: str = "", depth: int = 0) -> None:
+        if max_depth is not None and depth > max_depth:
+            return
+        
+        try:
+            items = os.listdir(current_path)
+            items.sort(key=lambda x: get_sort_key(os.path.join(current_path, x)))
+            
+            for i, item in enumerate(items):
+                item_path = os.path.join(current_path, item)
+                
+                if should_exclude(item_path):
+                    continue
+                
+                is_last = i == len(items) - 1
+                current_prefix = prefix + ("└── " if is_last else "├── ")
+                next_prefix = prefix + ("    " if is_last else "│   ")
+                
+                try:
+                    if os.path.islink(item_path):
+                        target = os.readlink(item_path)
+                        result.append(f"{current_prefix}{item} -> {target}")
+                    elif os.path.isdir(item_path):
+                        result.append(f"{current_prefix}{item}/")
+                        walk_directory(item_path, next_prefix, depth + 1)
+                    else:
+                        size = format_size(os.path.getsize(item_path))
+                        result.append(f"{current_prefix}{item} ({size})")
+                except OSError as e:
+                    result.append(f"{current_prefix}{item} [Error: {str(e)}]")
+        except OSError as e:
+            logger.error(f"Error accessing directory {current_path}: {e}")
+            result.append(f"{prefix}[Error: {str(e)}]")
+    
+    walk_directory(path)
+    return "\n".join(result)
+
+def read_file(file_path: str, binary: bool = False) -> Optional[Union[str, bytes]]:
+    """
+    Read content from a file.
+    
+    Args:
+        file_path: Path to the file
+        binary: Whether to read in binary mode
+        
+    Returns:
+        Optional[Union[str, bytes]]: File content if successful, None otherwise
+    """
+    logger.info(f"Reading file: {file_path}")
+    
+    try:
+        mode = 'rb' if binary else 'r'
+        with open(file_path, mode) as f:
+            content = f.read()
+        logger.info("Successfully read file content")
+        return content
+    except Exception as e:
+        logger.error(f"Error reading file: {e}")
+        return None
+
 def find_imports(code: str, language: str) -> List[Dict[str, str]]:
     """
     Find import statements in code.

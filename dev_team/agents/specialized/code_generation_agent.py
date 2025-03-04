@@ -5,6 +5,7 @@ This agent specializes in generating code based on user requirements.
 
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
+import os
 
 from pydantic_ai import RunContext
 from pydantic_ai.usage import UsageLimits
@@ -12,6 +13,7 @@ from pydantic_ai.usage import UsageLimits
 from agents.core.base_agent import BaseAgent
 from models.responses.agent_responses import CodeGenerationResponse
 from utils.logging.logger import setup_logger
+from tools.code_tools.code_tools import append_to_file, display_directory_structure, read_file
 
 # Create a logger for this module
 logger = setup_logger("code_generation_agent")
@@ -67,6 +69,9 @@ class CodeGenerationAgent(BaseAgent[CodeGenerationDependencies, CodeGenerationRe
         self.add_tool(self.analyze_requirements, retries=2)
         self.add_tool(self.suggest_libraries, retries=1)
         self.add_tool(self.generate_code_skeleton, takes_ctx=False)
+        self.add_tool(self.append_to_file, takes_ctx=False)
+        self.add_tool(self.display_directory_structure, takes_ctx=False)
+        self.add_tool(self.read_file, takes_ctx=False)
         
         logger.info("Registered tools for CodeGenerationAgent")
     
@@ -101,6 +106,29 @@ class CodeGenerationAgent(BaseAgent[CodeGenerationDependencies, CodeGenerationRe
         
         return prompt
     
+    def _create_code_file(self, code: str, file_path: str) -> bool:
+        """
+        Create a file with the generated code.
+        
+        Args:
+            code: Generated code content
+            file_path: Path where to save the file
+            
+        Returns:
+            bool: True if file was created successfully, False otherwise
+        """
+        logger.info(f"Creating code file at: {file_path}")
+        
+        # Create the file using append_to_file tool
+        success = self.append_to_file(file_path, code)
+        
+        if success:
+            logger.info(f"Successfully created file: {file_path}")
+        else:
+            logger.error(f"Failed to create file: {file_path}")
+        
+        return success
+
     @staticmethod
     async def analyze_requirements(
         ctx: RunContext[CodeGenerationDependencies],
@@ -164,6 +192,60 @@ class CodeGenerationAgent(BaseAgent[CodeGenerationDependencies, CodeGenerationRe
             ]
         
         return libraries
+    
+    def _get_default_file_path(self, language: str) -> str:
+        """
+        Get a default file path based on the programming language.
+        
+        Args:
+            language: Programming language
+            
+        Returns:
+            str: Default file path
+        """
+        # Map of language to file extension
+        extensions = {
+            "python": ".py",
+            "javascript": ".js",
+            "typescript": ".ts",
+            "java": ".java",
+            "html": ".html",
+            "css": ".css"
+        }
+        
+        # Get extension for language, default to .txt
+        ext = extensions.get(language.lower(), ".txt")
+        
+        # Create a basic file name
+        if language.lower() == "python" and ext == ".py":
+            return "simple_server.py"  # Special case for Python web server
+        
+        return f"generated_code{ext}"
+    
+    async def run(self, prompt: str, deps: CodeGenerationDependencies, message_history: Optional[List[Any]] = None) -> CodeGenerationResponse:
+        """
+        Run the code generation agent.
+        
+        Args:
+            prompt: User prompt describing the code to generate
+            deps: Dependencies for code generation
+            message_history: Previous messages for conversation context
+            
+        Returns:
+            CodeGenerationResponse with generated code and metadata
+        """
+        # Call parent's run method to get the response
+        response = await super().run(prompt, deps, message_history)
+        
+        # Get the file path from the response or use default
+        file_path = response.file_path or self._get_default_file_path(response.language)
+        
+        # Create the file with generated code
+        if self._create_code_file(response.code, file_path):
+            # Update response with actual file path
+            response.file_path = file_path
+        
+        return response
     
     @staticmethod
     def generate_code_skeleton(
@@ -303,3 +385,56 @@ class CodeGenerationAgent(BaseAgent[CodeGenerationDependencies, CodeGenerationRe
         # Default case if language or type is not supported
         logger.warning(f"Unsupported language or type: {language}, {type}")
         return f"// TODO: Generate {type} skeleton for {name} in {language}"
+
+    @staticmethod
+    def append_to_file(file_path: str, content: Union[str, bytes], binary: bool = False) -> bool:
+        """
+        Append content to a file.
+        
+        Args:
+            file_path: Path to the file
+            content: Content to append (string or bytes)
+            binary: Whether to append in binary mode
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info(f"Appending content to file: {file_path}")
+        return append_to_file(file_path, content, binary)
+
+    @staticmethod
+    def display_directory_structure(
+        path: str,
+        max_depth: Optional[int] = None,
+        exclude_patterns: Optional[List[str]] = None,
+        sort_by: str = "name"
+    ) -> str:
+        """
+        Display directory structure in a tree-like format.
+        
+        Args:
+            path: Root directory path
+            max_depth: Maximum depth to traverse (None for unlimited)
+            exclude_patterns: List of glob patterns to exclude
+            sort_by: Sort method ('name', 'size', 'modified')
+            
+        Returns:
+            str: Formatted directory structure
+        """
+        logger.info(f"Displaying directory structure for: {path}")
+        return display_directory_structure(path, max_depth, exclude_patterns, sort_by)
+
+    @staticmethod
+    def read_file(file_path: str, binary: bool = False) -> Optional[Union[str, bytes]]:
+        """
+        Read content from a file.
+        
+        Args:
+            file_path: Path to the file
+            binary: Whether to read in binary mode
+            
+        Returns:
+            Optional[Union[str, bytes]]: File content if successful, None otherwise
+        """
+        logger.info(f"Reading file: {file_path}")
+        return read_file(file_path, binary)
