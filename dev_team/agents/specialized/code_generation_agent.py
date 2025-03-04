@@ -5,7 +5,6 @@ This agent specializes in generating code based on user requirements.
 
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
-import os
 
 from pydantic_ai import RunContext
 from pydantic_ai.usage import UsageLimits
@@ -13,7 +12,12 @@ from pydantic_ai.usage import UsageLimits
 from agents.core.base_agent import BaseAgent
 from models.responses.agent_responses import CodeGenerationResponse
 from utils.logging.logger import setup_logger
-from tools.code_tools.code_tools import append_to_file, display_directory_structure, read_file
+from tools.code_tools import (
+    append_to_file,
+    display_directory_structure,
+    read_file,
+    generate_code_skeleton
+)
 
 # Create a logger for this module
 logger = setup_logger("code_generation_agent")
@@ -68,10 +72,10 @@ class CodeGenerationAgent(BaseAgent[CodeGenerationDependencies, CodeGenerationRe
         # Add tools using the BaseAgent wrapper methods
         self.add_tool(self.analyze_requirements, retries=2)
         self.add_tool(self.suggest_libraries, retries=1)
-        self.add_tool(self.generate_code_skeleton, takes_ctx=False)
-        self.add_tool(self.append_to_file, takes_ctx=False)
-        self.add_tool(self.display_directory_structure, takes_ctx=False)
-        self.add_tool(self.read_file, takes_ctx=False)
+        self.add_tool(self._generate_code_skeleton, takes_ctx=False)
+        self.add_tool(self._append_to_file, takes_ctx=False)
+        self.add_tool(self._display_directory_structure, takes_ctx=False)
+        self.add_tool(self._read_file, takes_ctx=False)
         
         logger.info("Registered tools for CodeGenerationAgent")
     
@@ -120,7 +124,7 @@ class CodeGenerationAgent(BaseAgent[CodeGenerationDependencies, CodeGenerationRe
         logger.info(f"Creating code file at: {file_path}")
         
         # Create the file using append_to_file tool
-        success = self.append_to_file(file_path, code)
+        success = self._append_to_file(file_path, code)
         
         if success:
             logger.info(f"Successfully created file: {file_path}")
@@ -128,7 +132,7 @@ class CodeGenerationAgent(BaseAgent[CodeGenerationDependencies, CodeGenerationRe
             logger.error(f"Failed to create file: {file_path}")
         
         return success
-
+    
     @staticmethod
     async def analyze_requirements(
         ctx: RunContext[CodeGenerationDependencies],
@@ -248,7 +252,7 @@ class CodeGenerationAgent(BaseAgent[CodeGenerationDependencies, CodeGenerationRe
         return response
     
     @staticmethod
-    def generate_code_skeleton(
+    def _generate_code_skeleton(
         type: str,
         name: str,
         language: str,
@@ -256,185 +260,32 @@ class CodeGenerationAgent(BaseAgent[CodeGenerationDependencies, CodeGenerationRe
         return_type: Optional[str] = None,
         description: Optional[str] = None
     ) -> str:
-        """
-        Generate a code skeleton for a function or class.
-        
-        Args:
-            type: Type of skeleton (function, class, etc.)
-            name: Name of the function or class
-            language: Programming language for the skeleton
-            params: List of parameter names
-            return_type: Return type of the function
-            description: Description for the docstring
-            
-        Returns:
-            Generated code skeleton
-        """
-        logger.info(f"Generating {type} skeleton for {name} in {language}")
-        
-        params = params or []
-        
-        if language.lower() == "python":
-            if type.lower() == "function":
-                # Generate Python function skeleton
-                code = f"def {name}({', '.join(params)}):\n"
-                
-                # Add docstring if description is provided
-                if description:
-                    code += f'    """\n    {description}\n'
-                    
-                    # Add parameter descriptions
-                    if params:
-                        code += "\n    Args:\n"
-                        for param in params:
-                            code += f"        {param}: Description of {param}\n"
-                    
-                    # Add return description if return type is provided
-                    if return_type:
-                        code += "\n    Returns:\n"
-                        code += f"        {return_type}: Description of return value\n"
-                    
-                    code += '    """\n'
-                
-                # Add function body
-                code += "    # TODO: Implement function\n"
-                code += "    pass\n"
-                
-                return code
-            elif type.lower() == "class":
-                # Generate Python class skeleton
-                code = f"class {name}:\n"
-                
-                # Add docstring if description is provided
-                if description:
-                    code += f'    """\n    {description}\n    """\n\n'
-                
-                # Add constructor
-                code += "    def __init__(self"
-                if params:
-                    code += ", " + ", ".join(params)
-                code += "):\n"
-                
-                # Add constructor body
-                if params:
-                    code += "        # Initialize attributes\n"
-                    for param in params:
-                        code += f"        self.{param} = {param}\n"
-                else:
-                    code += "        # TODO: Initialize attributes\n"
-                    code += "        pass\n"
-                
-                return code
-        elif language.lower() in ["javascript", "typescript"]:
-            if type.lower() == "function":
-                # Generate JavaScript function skeleton
-                if language.lower() == "typescript" and return_type:
-                    code = f"function {name}({', '.join(params)}): {return_type} {{\n"
-                else:
-                    code = f"function {name}({', '.join(params)}) {{\n"
-                
-                # Add function body
-                if description:
-                    code += f"    // {description}\n"
-                code += "    // TODO: Implement function\n"
-                
-                # Add return statement if return type is provided
-                if return_type and return_type.lower() != "void":
-                    if return_type.lower() == "boolean":
-                        code += "    return false;\n"
-                    elif return_type.lower() in ["number", "int", "float"]:
-                        code += "    return 0;\n"
-                    elif return_type.lower() == "string":
-                        code += "    return '';\n"
-                    elif return_type.lower().startswith("array") or return_type.endswith("[]"):
-                        code += "    return [];\n"
-                    elif return_type.lower() == "object":
-                        code += "    return {};\n"
-                    else:
-                        code += "    return null;\n"
-                
-                code += "}\n"
-                
-                return code
-            elif type.lower() == "class":
-                # Generate JavaScript class skeleton
-                code = f"class {name} {{\n"
-                
-                # Add constructor
-                code += "    constructor("
-                if params:
-                    code += ", ".join(params)
-                code += ") {\n"
-                
-                # Add constructor body
-                if description:
-                    code += f"        // {description}\n"
-                
-                if params:
-                    code += "        // Initialize attributes\n"
-                    for param in params:
-                        code += f"        this.{param} = {param};\n"
-                else:
-                    code += "        // TODO: Initialize attributes\n"
-                
-                code += "    }\n"
-                code += "}\n"
-                
-                return code
-        
-        # Default case if language or type is not supported
-        logger.warning(f"Unsupported language or type: {language}, {type}")
-        return f"// TODO: Generate {type} skeleton for {name} in {language}"
-
+        """Wrapper for generate_code_skeleton tool."""
+        return generate_code_skeleton(
+            language=language,
+            type=type,
+            name=name,
+            params=params,
+            return_type=return_type,
+            description=description
+        )
+    
     @staticmethod
-    def append_to_file(file_path: str, content: Union[str, bytes], binary: bool = False) -> bool:
-        """
-        Append content to a file.
-        
-        Args:
-            file_path: Path to the file
-            content: Content to append (string or bytes)
-            binary: Whether to append in binary mode
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        logger.info(f"Appending content to file: {file_path}")
+    def _append_to_file(file_path: str, content: Union[str, bytes], binary: bool = False) -> bool:
+        """Wrapper for append_to_file tool."""
         return append_to_file(file_path, content, binary)
-
+    
     @staticmethod
-    def display_directory_structure(
+    def _display_directory_structure(
         path: str,
         max_depth: Optional[int] = None,
         exclude_patterns: Optional[List[str]] = None,
         sort_by: str = "name"
     ) -> str:
-        """
-        Display directory structure in a tree-like format.
-        
-        Args:
-            path: Root directory path
-            max_depth: Maximum depth to traverse (None for unlimited)
-            exclude_patterns: List of glob patterns to exclude
-            sort_by: Sort method ('name', 'size', 'modified')
-            
-        Returns:
-            str: Formatted directory structure
-        """
-        logger.info(f"Displaying directory structure for: {path}")
+        """Wrapper for display_directory_structure tool."""
         return display_directory_structure(path, max_depth, exclude_patterns, sort_by)
-
+    
     @staticmethod
-    def read_file(file_path: str, binary: bool = False) -> Optional[Union[str, bytes]]:
-        """
-        Read content from a file.
-        
-        Args:
-            file_path: Path to the file
-            binary: Whether to read in binary mode
-            
-        Returns:
-            Optional[Union[str, bytes]]: File content if successful, None otherwise
-        """
-        logger.info(f"Reading file: {file_path}")
+    def _read_file(file_path: str, binary: bool = False) -> Optional[Union[str, bytes]]:
+        """Wrapper for read_file tool."""
         return read_file(file_path, binary)
