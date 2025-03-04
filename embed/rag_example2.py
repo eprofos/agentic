@@ -2,12 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-Exemple d'utilisation des embeddings pour un système RAG.
+Example of using embeddings for a RAG system.
 
-Ce script montre comment utiliser les embeddings générés et stockés dans
-la base de données PostgreSQL pour créer un système de Retrieval-Augmented
-Generation (RAG) qui peut répondre à des questions basées sur les documents
-indexés.
+This script demonstrates how to use embeddings generated and stored in
+the PostgreSQL database to create a Retrieval-Augmented Generation (RAG)
+system that can answer questions based on indexed documents.
 """
 
 import os
@@ -32,16 +31,16 @@ from langchain.chains import LLMChain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from tqdm import tqdm
 
-# Chargement des variables d'environnement
-# Chercher le fichier .env à la racine du projet
+# Load environment variables
+# Look for .env file at project root
 dotenv_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=dotenv_path)
 
-# Création du répertoire de logs s'il n'existe pas
+# Create logs directory if it doesn't exist
 logs_dir = Path(__file__).parent.parent / 'logs' / 'embed'
 logs_dir.mkdir(parents=True, exist_ok=True)
 
-# Configuration du logger
+# Logger configuration
 logger.remove()
 logger.add(
     sys.stderr,
@@ -58,7 +57,7 @@ logger.add(
 
 
 class RAGSystem:
-    """Système de Retrieval-Augmented Generation (RAG)."""
+    """Retrieval-Augmented Generation (RAG) System."""
     
     def __init__(
         self,
@@ -67,34 +66,34 @@ class RAGSystem:
         top_k: int = 5
     ):
         """
-        Initialise le système RAG.
+        Initialize the RAG system.
         
         Args:
-            embedding_model: Nom du modèle d'embedding
-            llm_model: Nom du modèle de langage
-            top_k: Nombre de documents à récupérer
+            embedding_model: Name of the embedding model
+            llm_model: Name of the language model
+            top_k: Number of documents to retrieve
         """
         self.embedding_model = embedding_model
         self.llm_model = llm_model
         self.top_k = top_k
         
-        # Récupérer les informations de connexion depuis les variables d'environnement
+        # Get connection information from environment variables
         db_user = os.getenv("POSTGRES_USER", "postgres")
         db_password = os.getenv("POSTGRES_PASSWORD", "postgres")
         db_name = os.getenv("POSTGRES_DB", "vector_db")
         db_host = os.getenv("POSTGRES_HOST", "localhost")
         db_port = os.getenv("POSTGRES_PORT", "5432")
         
-        # Créer l'URL de connexion
+        # Create connection URL
         self.db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
         
-        # Créer le moteur SQLAlchemy
+        # Create SQLAlchemy engine
         self.engine = sa.create_engine(self.db_url)
         
-        # Créer une session
+        # Create a session
         self.Session = sessionmaker(bind=self.engine)
         
-        # Initialiser le modèle d'embedding
+        # Initialize the embedding model
         ollama_host = os.getenv("OLLAMA_HOST", "http://localhost")
         ollama_port = os.getenv("OLLAMA_PORT", "11434")
         
@@ -103,16 +102,16 @@ class RAGSystem:
             base_url=f"{ollama_host}:{ollama_port}"
         )
         
-        # Initialiser le modèle de langage
-        # Récupérer les informations de configuration OpenRouter
+        # Initialize the language model
+        # Get OpenRouter configuration information
         openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
         openrouter_api_base = os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1")
         
-        # Utiliser le modèle spécifié ou celui de la variable d'environnement
+        # Use specified model or the one from environment variable
         self.llm_model = llm_model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.7-sonnet")
-        logger.info(f"Utilisation du modèle LLM: {self.llm_model}")
+        logger.info(f"Using LLM model: {self.llm_model}")
         
-        # Initialiser le LLM
+        # Initialize the LLM
         self.llm = ChatOpenAI(
             model=self.llm_model,
             api_key=openrouter_api_key,
@@ -120,7 +119,7 @@ class RAGSystem:
             temperature=0
         )
         
-        # Définir le template de prompt pour l'extraction des mots-clés
+        # Define the prompt template for keyword extraction
         self.keyword_extraction_prompt = PromptTemplate(
             input_variables=["question"],
             template="""
@@ -136,13 +135,13 @@ Extract 3-5 most relevant keywords or phrases for search (in English):
 """
         )
         
-        # Créer la chaîne LLM pour l'extraction des mots-clés
+        # Create the LLM chain for keyword extraction
         self.keyword_extraction_chain = LLMChain(
             llm=self.llm,
             prompt=self.keyword_extraction_prompt
         )
         
-        # Définir le template de prompt pour le RAG
+        # Define the prompt template for RAG
         self.prompt_template = PromptTemplate(
             input_variables=["context", "question"],
             template="""
@@ -168,70 +167,70 @@ Answer:
 """
         )
         
-        # Créer la chaîne LLM
+        # Create the LLM chain
         self.chain = LLMChain(
             llm=self.llm,
             prompt=self.prompt_template
         )
         
-        logger.info(f"Système RAG initialisé avec le modèle d'embedding {embedding_model} et le modèle de langage {self.llm_model}")
+        logger.info(f"RAG system initialized with embedding model {embedding_model} and language model {self.llm_model}")
     
     def extract_keywords_from_question(self, question: str) -> List[str]:
         """
-        Extrait les mots-clés pertinents d'une question pour améliorer la recherche.
+        Extract relevant keywords from a question to improve search.
         
         Args:
-            question: Question à analyser
+            question: Question to analyze
             
         Returns:
-            List[str]: Liste des mots-clés extraits
+            List[str]: List of extracted keywords
         """
         try:
-            logger.info(f"Extraction des mots-clés de la question: {question}")
+            logger.info(f"Extracting keywords from question: {question}")
             result = self.keyword_extraction_chain.invoke({"question": question})
             keywords_text = result.get("text", "").strip()
             
-            # Nettoyer et diviser en mots-clés individuels
-            # Supprimer les numéros de liste (1., 2., etc.) et les tirets
+            # Clean and split into individual keywords
+            # Remove list numbers (1., 2., etc.) and dashes
             keywords = []
             for line in keywords_text.split('\n'):
                 line = line.strip()
-                # Supprimer les numéros de liste et les tirets au début
+                # Remove list numbers and dashes at the beginning
                 line = re.sub(r'^(\d+\.|\-|\*)\s*', '', line)
                 if line:
                     keywords.append(line)
             
-            logger.info(f"Mots-clés extraits: {keywords}")
+            logger.info(f"Extracted keywords: {keywords}")
             return keywords
         except Exception as e:
-            logger.error(f"Erreur lors de l'extraction des mots-clés: {e}")
-            # En cas d'erreur, retourner la question originale comme mot-clé
+            logger.error(f"Error extracting keywords: {e}")
+            # In case of error, return the original question as a keyword
             return [question]
     
     def generate_query_embedding(self, query: str) -> List[float]:
         """
-        Génère l'embedding pour une requête.
+        Generate the embedding for a query.
         
         Args:
-            query: Requête à encoder
+            query: Query to encode
             
         Returns:
-            List[float]: Embedding de la requête
+            List[float]: Query embedding
         """
         return self.embeddings.embed_query(query)
     
     def retrieve_relevant_chunks(self, query_embedding: List[float]) -> List[Dict[str, Any]]:
         """
-        Récupère les chunks les plus pertinents pour une requête.
+        Retrieve the most relevant chunks for a query.
         
         Args:
-            query_embedding: Embedding de la requête
+            query_embedding: Query embedding
             
         Returns:
-            List[Dict[str, Any]]: Liste des chunks pertinents avec leurs métadonnées
+            List[Dict[str, Any]]: List of relevant chunks with their metadata
         """
         with self.Session() as session:
-            # Requête SQL pour récupérer les chunks les plus similaires
+            # SQL query to retrieve the most similar chunks
             query = sa.text(f"""
                 SELECT 
                     e.chunk_text,
@@ -268,72 +267,72 @@ Answer:
     
     def read_full_file_content(self, file_path: str) -> str:
         """
-        Lit le contenu complet d'un fichier à partir de son chemin.
+        Read the complete content of a file from its path.
         
         Args:
-            file_path: Chemin du fichier à lire
+            file_path: Path of the file to read
             
         Returns:
-            str: Contenu complet du fichier
+            str: Complete content of the file
         """
         try:
-            # Si le chemin est relatif, on considère qu'il est relatif au répertoire 'libs'
+            # If path is relative, consider it relative to 'libs' directory
             if not os.path.isabs(file_path):
                 base_path = Path(__file__).parent.parent / 'libs'
                 full_path = base_path / file_path
             else:
                 full_path = Path(file_path)
             
-            logger.info(f"Lecture du fichier complet: {full_path}")
+            logger.info(f"Reading complete file: {full_path}")
             return full_path.read_text(encoding='utf-8')
         except Exception as e:
-            logger.error(f"Erreur lors de la lecture du fichier {file_path}: {e}")
-            return f"Erreur lors de la lecture du fichier: {e}"
+            logger.error(f"Error reading file {file_path}: {e}")
+            return f"Error reading file: {e}"
     
     def format_context(self, chunks: List[Dict[str, Any]]) -> str:
         """
-        Formate les chunks en un contexte pour le LLM.
+        Format chunks into a context for the LLM.
         
         Args:
-            chunks: Liste des chunks pertinents
+            chunks: List of relevant chunks
             
         Returns:
-            str: Contexte formaté
+            str: Formatted context
         """
         context_parts = []
         
-        # Garder une trace des fichiers déjà inclus pour éviter les doublons
+        # Keep track of already included files to avoid duplicates
         included_files = set()
         
         for i, chunk in enumerate(chunks):
             file_path = chunk['file_path']
             
-            # Ajouter d'abord le chunk pertinent
-            context_parts.append(f"[Extrait {i+1} du document: {file_path}]\n{chunk['chunk_text']}")
+            # Add the relevant chunk first
+            context_parts.append(f"[Excerpt {i+1} from document: {file_path}]\n{chunk['chunk_text']}")
             
-            # Si le fichier complet n'a pas encore été inclus, l'ajouter
+            # If the full file has not been included yet, add it
             if file_path not in included_files:
                 try:
                     full_content = self.read_full_file_content(file_path)
-                    context_parts.append(f"\n[Contenu complet du fichier: {file_path}]\n{full_content}")
+                    context_parts.append(f"\n[Full file content: {file_path}]\n{full_content}")
                     included_files.add(file_path)
                 except Exception as e:
-                    logger.error(f"Erreur lors de la lecture du fichier complet {file_path}: {e}")
+                    logger.error(f"Error reading full file {file_path}: {e}")
         
         return "\n\n".join(context_parts)
     
     def answer_question(self, question: str, verbose: bool = False, max_iterations: int = 3) -> str:
         """
-        Répond à une question en utilisant le système RAG.
+        Answer a question using the RAG system.
         
         Args:
-            question: Question à répondre
-            verbose: Afficher les détails du processus
+            question: Question to answer
+            verbose: Show process details
             
-            max_iterations: Nombre maximum d'itérations de recherche
+            max_iterations: Maximum number of search iterations
             
         Returns:
-            str: Réponse à la question
+            str: Answer to the question
         """
         logger.info(f"Question: {question}")
         
@@ -341,69 +340,69 @@ Answer:
         original_question = question
         iteration = 0
         all_responses = []
-        search_history = [question]  # Garder une trace des requêtes de recherche
+        search_history = [question]  # Keep track of search queries
         
-        # Extraire les mots-clés de la question originale
+        # Extract keywords from the original question
         keywords = self.extract_keywords_from_question(question)
         if keywords:
-            # Utiliser les mots-clés extraits pour la première recherche
+            # Use extracted keywords for the first search
             current_question = " ".join(keywords)
             search_history[0] = f"Original: '{question}' → Keywords: '{current_question}'"
-            logger.info(f"Recherche avec les mots-clés extraits: {current_question}")
+            logger.info(f"Searching with extracted keywords: {current_question}")
         
         while iteration < max_iterations:
             iteration += 1
-            logger.info(f"Itération {iteration}/{max_iterations} - Requête: {current_question}")
+            logger.info(f"Iteration {iteration}/{max_iterations} - Query: {current_question}")
             
-            # Générer l'embedding de la question
+            # Generate the embedding of the question
             query_embedding = self.generate_query_embedding(current_question)
             
-            # Récupérer les chunks pertinents
+            # Retrieve relevant chunks
             chunks = self.retrieve_relevant_chunks(query_embedding)
             
             if verbose:
-                print(f"\n=== Itération {iteration}/{max_iterations} ===")
-                print(f"Requête: {current_question}")
-                print("\n=== Chunks pertinents ===")
+                print(f"\n=== Iteration {iteration}/{max_iterations} ===")
+                print(f"Query: {current_question}")
+                print("\n=== Relevant Chunks ===")
                 for i, chunk in enumerate(chunks):
-                    print(f"\n--- Chunk {i+1} (Similarité: {chunk['similarity']:.4f}) ---")
+                    print(f"\n--- Chunk {i+1} (Similarity: {chunk['similarity']:.4f}) ---")
                     print(f"Source: {chunk['file_path']}")
-                    print(f"Texte: {chunk['chunk_text'][:200]}...")
+                    print(f"Text: {chunk['chunk_text'][:200]}...")
             
-            # Formater le contexte
+            # Format the context
             context = self.format_context(chunks)
             
-            # Générer la réponse
+            # Generate the answer
             result = self.chain.invoke({"context": context, "question": original_question})
-            response = result.get("text", "")  # Extraire la réponse du résultat
+            response = result.get("text", "")  # Extract the answer from the result
             
-            logger.info(f"Réponse générée avec {len(chunks)} chunks pertinents")
+            logger.info(f"Answer generated with {len(chunks)} relevant chunks")
             
-            # Vérifier si la réponse contient des mots-clés pour une nouvelle recherche
+            # Check if the answer contains keywords for a new search
             new_keywords = self._extract_keywords_for_new_search(response)
             
             if not new_keywords:
-                # Si pas de nouveaux mots-clés, on a une réponse satisfaisante ou on ne peut pas améliorer
-                all_responses.append(f"[Itération {iteration}] {response}")
+                # If no new keywords, we have a satisfactory answer or cannot improve
+                all_responses.append(f"[Iteration {iteration}] {response}")
                 break
             else:
-                # Ajouter la réponse actuelle à l'historique
-                all_responses.append(f"[Itération {iteration}] {response}")
+                # Add the current answer to the history
+                all_responses.append(f"[Iteration {iteration}] {response}")
                 
-                # Créer une nouvelle requête avec les mots-clés
+                # Create a new query with the keywords
                 current_question = f"{' '.join(new_keywords)}"
                 search_history.append(current_question)
                 
-                logger.info(f"Nouveaux mots-clés identifiés: {new_keywords}")
+                logger.info(f"New keywords identified: {new_keywords}")
         
-        # Si on a atteint le nombre maximum d'itérations sans réponse satisfaisante
+        # If we reached the maximum number of iterations without a satisfactory answer
         if iteration == max_iterations and new_keywords:
             all_responses.append(
-                f"\n\nAprès {max_iterations} itérations, aucune réponse satisfaisante n'a pu être trouvée. "
-                f"Les recherches ont été effectuées avec les requêtes suivantes: {search_history}"
+                f"\n\nAfter {max_iterations} iterations, no satisfactory answer could be found. "
+                f"Searches were conducted with the following queries: {search_history}"
             )
         
-        # Retourner toutes les réponses ou seulement la dernière selon le besoin
+        # Return all responses or only the last one as needed
         if verbose:
             return "\n\n".join(all_responses)
         else:
@@ -411,56 +410,56 @@ Answer:
     
     def _extract_keywords_for_new_search(self, response: str) -> List[str]:
         """
-        Extrait les mots-clés pour une nouvelle recherche à partir de la réponse du LLM.
+        Extract keywords for a new search from the LLM's response.
         
         Args:
-            response: Réponse du LLM
+            response: LLM's response
             
         Returns:
-            List[str]: Liste des mots-clés pour une nouvelle recherche
+            List[str]: List of keywords for a new search
         """
-        # Chercher la section des mots-clés dans la réponse
+        # Look for the keywords section in the response
         if "KEYWORDS_FOR_NEW_SEARCH:" in response:
             try:
-                # Extraire la partie après l'indicateur
+                # Extract the part after the indicator
                 keywords_part = response.split("KEYWORDS_FOR_NEW_SEARCH:")[1].strip()
-                # Nettoyer et diviser en mots-clés individuels
+                # Clean and split into individual keywords
                 keywords = [k.strip() for k in keywords_part.split(",")]
-                # Filtrer les mots-clés vides
+                # Filter out empty keywords
                 keywords = [k for k in keywords if k]
                 return keywords
             except Exception as e:
-                logger.error(f"Erreur lors de l'extraction des mots-clés: {e}")
+                logger.error(f"Error extracting keywords: {e}")
         
-        # Si pas de mots-clés trouvés ou erreur, retourner une liste vide
+        # If no keywords found or error, return an empty list
         return []
 
 
 def main():
-    """Fonction principale."""
-    parser = argparse.ArgumentParser(description="Système RAG pour répondre à des questions basées sur les documents indexés.")
-    parser.add_argument("--embedding-model", type=str, default="nomic-embed-text", help="Nom du modèle d'embedding")
-    parser.add_argument("--llm-model", type=str, help="Nom du modèle de langage (si non spécifié, utilise OPENROUTER_MODEL)")
-    parser.add_argument("--top-k", type=int, default=10, help="Nombre de documents à récupérer")
-    parser.add_argument("--max-iterations", type=int, default=3, help="Nombre maximum d'itérations de recherche")
-    parser.add_argument("--verbose", action="store_true", help="Afficher les détails du processus")
+    """Main function."""
+    parser = argparse.ArgumentParser(description="RAG system for answering questions based on indexed documents.")
+    parser.add_argument("--embedding-model", type=str, default="nomic-embed-text", help="Name of the embedding model")
+    parser.add_argument("--llm-model", type=str, help="Name of the language model (if not specified, uses OPENROUTER_MODEL)")
+    parser.add_argument("--top-k", type=int, default=10, help="Number of documents to retrieve")
+    parser.add_argument("--max-iterations", type=int, default=3, help="Maximum number of search iterations")
+    parser.add_argument("--verbose", action="store_true", help="Show process details")
     args = parser.parse_args()
     
-    # Créer le système RAG
+    # Create RAG system
     rag_system = RAGSystem(
         embedding_model=args.embedding_model,
         llm_model=args.llm_model,
         top_k=args.top_k
     )
     
-    print("\n=== Système RAG ===")
-    print(f"Modèle d'embedding: {args.embedding_model}")
-    print(f"Modèle de langage: {args.llm_model}")
-    print(f"Nombre de documents à récupérer: {args.top_k}")
-    print(f"Nombre maximum d'itérations: {args.max_iterations}")
-    print("\nTapez 'exit' pour quitter.")
+    print("\n=== RAG System ===")
+    print(f"Embedding model: {args.embedding_model}")
+    print(f"Language model: {args.llm_model}")
+    print(f"Number of documents to retrieve: {args.top_k}")
+    print(f"Maximum number of iterations: {args.max_iterations}")
+    print("\nType 'exit' to quit.")
     
-    # Boucle interactive
+    # Interactive loop
     while True:
         print("\n")
         question = input("Question: ")
@@ -473,11 +472,11 @@ def main():
         
         try:
             answer = rag_system.answer_question(question, verbose=args.verbose, max_iterations=args.max_iterations)
-            print("\nRéponse:")
+            print("\nAnswer:")
             print(answer)
         except Exception as e:
-            logger.error(f"Erreur lors de la génération de la réponse: {e}")
-            print(f"\nErreur: {e}")
+            logger.error(f"Error generating answer: {e}")
+            print(f"\nError: {e}")
 
 
 if __name__ == "__main__":
